@@ -61,6 +61,39 @@ sunLight.shadow.camera.top = d;
 sunLight.shadow.camera.bottom = -d;
 scene.add(sunLight);
 
+// Moonlight (Night sky illumination)
+const moonLight = new THREE.DirectionalLight(0xa5f3fc, 0.0);
+moonLight.position.set(-20, -40, -20);
+moonLight.castShadow = true;
+moonLight.shadow.mapSize.width = 512;
+moonLight.shadow.mapSize.height = 512;
+moonLight.shadow.camera.near = 0.5;
+moonLight.shadow.camera.far = 100;
+moonLight.shadow.camera.left = -d;
+moonLight.shadow.camera.right = d;
+moonLight.shadow.camera.top = d;
+moonLight.shadow.camera.bottom = -d;
+scene.add(moonLight);
+
+// Starfield particles (Night sky)
+const starGeo = new THREE.BufferGeometry();
+const starCount = 400;
+const starPositions = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount * 3; i += 3) {
+  const u = Math.random();
+  const v = Math.random();
+  const theta = u * 2.0 * Math.PI;
+  const phi = Math.acos(2.0 * v - 1.0);
+  const r = 180;
+  starPositions[i] = r * Math.sin(phi) * Math.cos(theta);
+  starPositions[i+1] = Math.abs(r * Math.sin(phi) * Math.sin(theta)); // Keep stars in sky dome
+  starPositions[i+2] = r * Math.cos(phi);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+const starMat = new THREE.PointsMaterial({ color: '#ffffff', size: 0.6, transparent: true, opacity: 0 });
+const starfield = new THREE.Points(starGeo, starMat);
+scene.add(starfield);
+
 // Glow pointlights list
 const glowLights = [];
 
@@ -883,20 +916,28 @@ window.addEventListener('resize', () => {
 
 // Day/Night sky illumination transitions
 function updateDayNightCycle(dt) {
-  dayTime += dt * 0.05; // orbit speed
+  dayTime += dt * 0.04; // orbit speed
   const sunY = Math.sin(dayTime);
   const sunZ = Math.cos(dayTime);
   sunLight.position.set(0, sunY * 40, sunZ * 40);
+
+  const moonY = -sunY;
+  const moonZ = -sunZ;
+  moonLight.position.set(0, moonY * 40, moonZ * 40);
 
   // Transition sky background and directional lighting intensity
   if (sunY > 0) {
     scene.background.set('#38bdf8'); // Day blue
     scene.fog.color.set('#38bdf8');
     sunLight.intensity = 1.25 * sunY;
+    moonLight.intensity = 0.0;
+    starMat.opacity = 0.0;
   } else {
     scene.background.set('#0b0f19'); // Dark night
     scene.fog.color.set('#0b0f19');
-    sunLight.intensity = 0.05;
+    sunLight.intensity = 0.02;
+    moonLight.intensity = 0.35 * moonY;
+    starMat.opacity = Math.min(0.9, moonY * 1.3);
   }
 }
 
