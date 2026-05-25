@@ -1,12 +1,11 @@
 // ============================================================
-// Voxverse Web Worker — Terrain & Texture Engine (V3.0)
+// Voxverse Web Worker — Terrain & Texture Engine (V4.0)
 // ============================================================
 
-// High-performance 3D Perlin Noise class for caves, strata, and noise octaves
+// High-precision 3D Perlin Noise class for caves, strata, and noise octaves
 class PerlinNoise3D {
   constructor(seed = 1337) {
     this.p = new Uint8Array(256);
-    // Seeded pseudo-random generator
     for (let i = 0; i < 256; i++) {
       this.p[i] = Math.floor(((Math.sin(i + seed) * 10000) % 1) * 256);
     }
@@ -61,7 +60,6 @@ class PerlinNoise3D {
                                                   this.grad(this.perm[BB + 1], x - 1, y - 1, z - 1))));
   }
 
-  // 4-Octave Fractal Brownian Motion (fBm)
   fBm(x, y, z, octaves = 4, persistence = 0.5, lacunarity = 2.0) {
     let total = 0;
     let frequency = 1.0;
@@ -78,6 +76,12 @@ class PerlinNoise3D {
 }
 
 const perlin = new PerlinNoise3D(4242);
+
+// High-precision wrapping to prevent floating-point precision loss at massive coordinates (+/- 30,000,000)
+const wrapCoord = (v) => {
+  const maxRange = 65536; // Large enough power of 2 to fit seamless biomes
+  return ((v % maxRange) + maxRange) % maxRange;
+};
 
 // Procedurally generate high-fidelity raw pixel arrays (64x64 RGBA)
 function generateProceduralTexture(type, sz = 64) {
@@ -230,13 +234,12 @@ function generateProceduralTexture(type, sz = 64) {
   }
 
   else if (type === 'coal') {
-    // Dark coal ore in gray stone
     for (let y = 0; y < sz; y++) {
       for (let x = 0; x < sz; x++) {
         const n = getNoise(x, y, 0.15);
-        let r = 100, g = 116, b = 139; // stone gray
+        let r = 100, g = 116, b = 139;
         if (n > 0.6) {
-          r = 24; g = 24; b = 27; // coal dark gray
+          r = 24; g = 24; b = 27;
         }
         setPixel(x, y, r, g, b);
       }
@@ -244,13 +247,12 @@ function generateProceduralTexture(type, sz = 64) {
   }
 
   else if (type === 'iron') {
-    // Metallic rust spots in gray stone
     for (let y = 0; y < sz; y++) {
       for (let x = 0; x < sz; x++) {
         const n = getNoise(x, y, 0.18);
-        let r = 100, g = 116, b = 139; // stone gray
+        let r = 100, g = 116, b = 139;
         if (n > 0.65) {
-          r = 180; g = 83; b = 9; // orange-brown iron spots
+          r = 180; g = 83; b = 9;
         }
         setPixel(x, y, r, g, b);
       }
@@ -288,8 +290,12 @@ self.onmessage = function(e) {
     const chunkSize = 16;
     const voxels = new Uint8Array(chunkSize * chunkSize * chunkSize);
     
-    // Determine biome column-wise using 2D noise
-    const biomeVal = (perlin.noise3D(cx * 0.1, 0.5, cz * 0.1) + 1) / 2;
+    // Wrapped chunk coordinates for deterministic biome tracking
+    const wcx = ((cx % 4096) + 4096) % 4096;
+    const wcz = ((cz % 4096) + 4096) % 4096;
+
+    // Determine biome column-wise using 2D wrapped noise
+    const biomeVal = (perlin.noise3D(wcx * 0.1, 0.5, wcz * 0.1) + 1) / 2;
     let biome = 'canopy';
     if (biomeVal > 0.68) {
       biome = 'peaks';
@@ -303,27 +309,26 @@ self.onmessage = function(e) {
         const worldX = cx * chunkSize + x;
         const worldZ = cz * chunkSize + z;
 
+        // Apply high-precision wrapping to eliminate noise vertex jitter
+        const wx = wrapCoord(worldX);
+        const wz = wrapCoord(worldZ);
+
         for (let y = 0; y < chunkSize; y++) {
           const worldY = cy * chunkSize + y;
 
-          // 3D Fractal noise density field calculation (Fbm)
-          const nVal = perlin.fBm(worldX * 0.035, worldY * 0.05, worldZ * 0.035, 4, 0.5, 2.0);
+          // 3D Fractal noise density field calculation using high-precision wrapped coordinates
+          const nVal = perlin.fBm(wx * 0.035, worldY * 0.05, wz * 0.035, 4, 0.5, 2.0);
           
-          // Baseline shifts down as Y increases to create air
           const baseline = (worldY - 14) / 8;
           const density = nVal - baseline;
 
           let block = 0; // default Air
 
           if (density > 0) {
-            // Strata calculation (Y column height analysis)
-            // Let's determine what sits above this block
-            // To find top-surface blocks without querying full world height, we query relative local density
-            const densityAbove = perlin.fBm(worldX * 0.035, (worldY + 1) * 0.05, worldZ * 0.035, 4, 0.5, 2.0) - ((worldY + 1) - 14) / 8;
-            const densityTwoAbove = perlin.fBm(worldX * 0.035, (worldY + 2) * 0.05, worldZ * 0.035, 4, 0.5, 2.0) - ((worldY + 2) - 14) / 8;
+            const densityAbove = perlin.fBm(wx * 0.035, (worldY + 1) * 0.05, wz * 0.035, 4, 0.5, 2.0) - ((worldY + 1) - 14) / 8;
+            const densityTwoAbove = perlin.fBm(wx * 0.035, (worldY + 2) * 0.05, wz * 0.035, 4, 0.5, 2.0) - ((worldY + 2) - 14) / 8;
 
             if (densityAbove <= 0) {
-              // Surface top layer
               if (biome === 'sand') {
                 block = 7; // Sand
               } else if (biome === 'peaks') {
@@ -332,34 +337,31 @@ self.onmessage = function(e) {
                 block = 1; // Grass
               }
             } else if (densityTwoAbove <= 0) {
-              // Intermediate Dirt layer
               block = (biome === 'sand') ? 7 : 2; // Sand or Dirt
             } else {
-              // Sub-surface Stone / Cavern veins
               block = 3; // Stone base
 
-              // Ore vein spawning at specific Y ranges
+              // Ore vein spawning using high-precision wrapped coordinates
               if (worldY >= 4 && worldY <= 22) {
-                const coalNoise = perlin.noise3D(worldX * 0.22, worldY * 0.22, worldZ * 0.22);
+                const coalNoise = perlin.noise3D(wx * 0.22, worldY * 0.22, wz * 0.22);
                 if (coalNoise > 0.55) {
                   block = 10; // Coal Ore
                 }
               }
               if (worldY >= 2 && worldY <= 15) {
-                const ironNoise = perlin.noise3D(worldX * 0.25, worldY * 0.25, worldZ * 0.25);
+                const ironNoise = perlin.noise3D(wx * 0.25, worldY * 0.25, wz * 0.25);
                 if (ironNoise > 0.6) {
                   block = 11; // Iron Ore
                 }
               }
               if (worldY >= 1 && worldY <= 10) {
-                const crystalNoise = perlin.noise3D(worldX * 0.28, worldY * 0.28, worldZ * 0.28);
+                const crystalNoise = perlin.noise3D(wx * 0.28, worldY * 0.28, wz * 0.28);
                 if (crystalNoise > 0.65) {
                   block = 8; // Crystal block
                 }
               }
             }
           } else {
-            // Fluid density layer check
             if (worldY < 5 && biome !== 'peaks') {
               block = 6; // Water
             }
@@ -373,12 +375,10 @@ self.onmessage = function(e) {
 
     // Decorate structural passes: Spawning deterministic trees within bounds
     if (biome === 'canopy' && cy === 0) {
-      // Pick a deterministic position based on chunk coordinates
-      const treeX = 8 + Math.floor(Math.sin(cx * 15.3) * 4);
-      const treeZ = 8 + Math.floor(Math.cos(cz * 22.7) * 4);
+      const treeX = 8 + Math.floor(Math.sin(wcx * 15.3) * 4);
+      const treeZ = 8 + Math.floor(Math.cos(wcz * 22.7) * 4);
 
       if (treeX > 2 && treeX < 13 && treeZ > 2 && treeZ < 13) {
-        // Find surface Y
         let surfaceY = -1;
         for (let y = chunkSize - 1; y >= 0; y--) {
           const idx = treeX + y * chunkSize + treeZ * chunkSize * chunkSize;
@@ -389,14 +389,12 @@ self.onmessage = function(e) {
         }
 
         if (surfaceY !== -1 && surfaceY < chunkSize - 7) {
-          // Spawn wood trunk
           const height = 5;
           for (let ty = surfaceY + 1; ty <= surfaceY + height; ty++) {
             const tIdx = treeX + ty * chunkSize + treeZ * chunkSize * chunkSize;
             voxels[tIdx] = 4; // Wood Trunk
           }
 
-          // Spawn leaves crown
           for (let ly = surfaceY + height - 2; ly <= surfaceY + height + 1; ly++) {
             const rad = (ly === surfaceY + height + 1) ? 1 : 2;
             for (let lx = treeX - rad; lx <= treeX + rad; lx++) {

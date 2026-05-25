@@ -792,6 +792,14 @@ function updateF3Overlay() {
   if (entitiesLabel) {
     entitiesLabel.innerText = `Entities: ${mobs.mobs.length + 1}`;
   }
+  const chunksCountLabel = document.getElementById('f3-chunks-count');
+  const gpuInstancesLabel = document.getElementById('f3-gpu-instances');
+  if (chunksCountLabel) {
+    chunksCountLabel.innerText = `${world.chunkMeshes.size}`;
+  }
+  if (gpuInstancesLabel) {
+    gpuInstancesLabel.innerText = `${world.getGPUInstanceCount()}`;
+  }
 }
 
 // Window resizing handler
@@ -967,6 +975,9 @@ function animate() {
   if (avatar && player) {
     avatar.tick(performance.now() / 1000, player.getHorizontalSpeed(), !player.isGrounded && !player.flyMode);
   }
+
+  // 5c. Update active spatial chunks loading/unloading
+  world.updateLoadedChunks(player.position, scene, blockMaterials);
 
   // 6. Draw raycasting selector targeting
   updateRaycastSelection();
