@@ -13,6 +13,8 @@ export const BLOCK_NAMES = {
   [BLOCK_TYPES.SAND]:    { name: 'Sand',    icon: '🟨', color: '#fef08a' },
   [BLOCK_TYPES.CRYSTAL]: { name: 'Crystal', icon: '💜', color: '#d946ef' },
   [BLOCK_TYPES.TORCH]:   { name: 'Torch',   icon: '🔥', color: '#f97316' },
+  [BLOCK_TYPES.COAL]:    { name: 'Coal Ore', icon: '⚫', color: '#374151' },
+  [BLOCK_TYPES.IRON]:    { name: 'Iron Ore', icon: '🔩', color: '#b45309' },
 };
 
 export const RECIPES = [

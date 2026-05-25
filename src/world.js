@@ -14,7 +14,9 @@ export const BLOCK_TYPES = {
   WATER: 6,
   SAND: 7,
   CRYSTAL: 8,
-  TORCH: 9
+  TORCH: 9,
+  COAL: 10,
+  IRON: 11
 };
 
 const blockBoxGeometry = new THREE.BoxGeometry(1, 1, 1);

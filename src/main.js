@@ -101,6 +101,7 @@ window.addEventListener('click', (e) => {
                          e.clientY >= 0 && e.clientY <= window.innerHeight;
 
   if (isBlockerOrChild && isWithinWindow) {
+    canvas.focus();
     canvas.requestPointerLock();
   }
 });
@@ -898,7 +899,9 @@ worldWorker.onmessage = function(e) {
       [BLOCK_TYPES.WATER]:   new THREE.MeshStandardMaterial({ map: materials.water, roughness: 0.1, transparent: true, opacity: 0.7 }),
       [BLOCK_TYPES.SAND]:    new THREE.MeshStandardMaterial({ map: materials.sand, roughness: 0.98 }),
       [BLOCK_TYPES.CRYSTAL]: new THREE.MeshStandardMaterial({ map: materials.crystal, roughness: 0.1, emissive: '#d946ef', emissiveIntensity: 0.8 }),
-      [BLOCK_TYPES.TORCH]:   new THREE.MeshStandardMaterial({ map: materials.torch, roughness: 0.5, emissive: '#ea580c', emissiveIntensity: 1.0 })
+      [BLOCK_TYPES.TORCH]:   new THREE.MeshStandardMaterial({ map: materials.torch, roughness: 0.5, emissive: '#ea580c', emissiveIntensity: 1.0 }),
+      [BLOCK_TYPES.COAL]:    new THREE.MeshStandardMaterial({ map: materials.coal, roughness: 0.85 }),
+      [BLOCK_TYPES.IRON]:    new THREE.MeshStandardMaterial({ map: materials.iron, roughness: 0.8 })
     };
 
     // Load initial inventory slots
@@ -908,6 +911,8 @@ worldWorker.onmessage = function(e) {
     inventory.add(BLOCK_TYPES.WOOD, 20);
     inventory.add(BLOCK_TYPES.CRYSTAL, 10);
     inventory.add(BLOCK_TYPES.TORCH, 15);
+    inventory.add(BLOCK_TYPES.COAL, 10);
+    inventory.add(BLOCK_TYPES.IRON, 10);
     updateDurabilityUI();
 
     // Trigger Minecraft loader UI countdown transitions

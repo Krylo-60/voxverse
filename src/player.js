@@ -1,5 +1,5 @@
 // ============================================================
-// Voxverse Player Physics & Camera collision Engine (V2.0)
+// Voxverse Player Physics & Kinematics Engine (V3.0)
 // ============================================================
 import * as THREE from 'three';
 import { BLOCK_TYPES } from './world.js';
@@ -10,16 +10,18 @@ export class Player {
     this.camera = camera;
     this.domElement = domElement;
 
-    // Movement state vectors
-    this.position = new THREE.Vector3(16, 12, 16); // Start high to prevent clipping initial terrain
+    // Movement state vectors (Newtonian kinematics)
+    this.position = new THREE.Vector3(16, 15, 16); // High starting position
     this.velocity = new THREE.Vector3();
-    this.acceleration = new THREE.Vector3();
+    this.forces = new THREE.Vector3();
+    this.mass = 1.0; // F = ma (m=1.0)
+    
     this.yaw = 0;
     this.pitch = 0;
 
-    // Player physical bounding box dimensions
+    // Player bounding box dimensions
     this.width = 0.6;
-    this.height = 1.7;
+    this.height = 1.75;
     this.depth = 0.6;
 
     // Physics toggles
@@ -27,42 +29,45 @@ export class Player {
     this.flyMode = false;
     this.cameraMode = 'first'; // 'first' or 'third'
 
+    // Smooth Third-Person camera position interpolation
+    this.smoothedCameraPos = new THREE.Vector3();
+
     // Key states
     this.keys = {
       KeyW: false, KeyA: false, KeyS: false, KeyD: false,
       Space: false, ShiftLeft: false, ControlLeft: false
     };
 
-    // Sprint / sneak states
     this.isSprinting = false;
-    this.isSneaking  = false;
-    this._lastWPress  = 0; // Minecraft-style double-tap W sprint detection
+    this.isSneaking = false;
+    this._lastWPress = 0;
 
     this.initInput();
   }
 
   initInput() {
-    window.addEventListener('keydown', (e) => {
+    // Keyboard inputs explicitly bound to the global 'document' context
+    document.addEventListener('keydown', (e) => {
       const code = e.code === 'Space' ? 'Space' : e.code;
       if (this.keys.hasOwnProperty(code)) {
         this.keys[code] = true;
       }
 
-      // Fly Mode: Key 'F'
-      if (e.code === 'KeyF' && document.pointerLockElement) {
+      // Toggle Fly: 'F' key
+      if (e.code === 'KeyF' && document.pointerLockElement === this.domElement) {
         this.flyMode = !this.flyMode;
         this.velocity.set(0, 0, 0);
         this.addNotification(`Fly Mode: ${this.flyMode ? 'ON ✈️' : 'OFF 🦶'}`);
       }
 
-      // Camera: Key 'V' or 'F5'
-      if ((e.code === 'F5' || e.code === 'KeyV') && document.pointerLockElement) {
+      // Camera: 'V' or 'F5' keys
+      if ((e.code === 'F5' || e.code === 'KeyV') && document.pointerLockElement === this.domElement) {
         e.preventDefault();
         this.cameraMode = this.cameraMode === 'first' ? 'third' : 'first';
         this.addNotification(`Camera: ${this.cameraMode === 'first' ? '👁️ First Person' : '🎥 Third Person'}`);
       }
 
-      // Double W to Sprint
+      // Double-Tap W to sprint
       if (e.code === 'KeyW') {
         const now = Date.now();
         if (now - this._lastWPress < 280 && !this.flyMode) {
@@ -73,19 +78,21 @@ export class Player {
       }
     });
 
-    window.addEventListener('keyup', (e) => {
+    document.addEventListener('keyup', (e) => {
       const code = e.code === 'Space' ? 'Space' : e.code;
       if (this.keys.hasOwnProperty(code)) {
         this.keys[code] = false;
       }
-      if (e.code === 'KeyW') this.isSprinting = false;
-      if (e.code === 'ControlLeft') this.isSprinting = false;
+      if (code === 'KeyW') this.isSprinting = false;
+      if (code === 'ControlLeft') this.isSprinting = false;
     });
 
-    // Pointer Lock mouse look listeners
-    this.domElement.addEventListener('click', () => {
+    // Reset controls on pointer lock disengagement to prevent drift/paralysis
+    document.addEventListener('pointerlockchange', () => {
       if (document.pointerLockElement !== this.domElement) {
-        this.domElement.requestPointerLock();
+        Object.keys(this.keys).forEach(k => this.keys[k] = false);
+        this.isSprinting = false;
+        this.isSneaking = false;
       }
     });
 
@@ -96,7 +103,6 @@ export class Player {
       this.yaw -= e.movementX * sensitivity;
       this.pitch -= e.movementY * sensitivity;
 
-      // Limit pitch to prevent looking past zenith/nadir
       const limit = Math.PI / 2.05;
       this.pitch = Math.max(-limit, Math.min(limit, this.pitch));
     });
@@ -116,11 +122,11 @@ export class Player {
     chatContainer.scrollTop = chatContainer.scrollHeight;
   }
 
-  // Check if player bounding box collides with solid voxels
+  // Bounding box query
   collidesAt(pos) {
     const minX = Math.floor(pos.x - this.width / 2);
     const maxX = Math.floor(pos.x + this.width / 2);
-    const minY = Math.floor(pos.y - 0.05); // Include check slightly below feet
+    const minY = Math.floor(pos.y - 0.05);
     const maxY = Math.floor(pos.y + this.height);
     const minZ = Math.floor(pos.z - this.depth / 2);
     const maxZ = Math.floor(pos.z + this.depth / 2);
@@ -128,10 +134,9 @@ export class Player {
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
         for (let z = minZ; z <= maxZ; z++) {
-          // Query voxel from chunk entries
           const block = this.world.getVoxel(x, y, z);
           if (block !== BLOCK_TYPES.AIR && block !== BLOCK_TYPES.WATER) {
-            return true; // Collision!
+            return true;
           }
         }
       }
@@ -139,83 +144,127 @@ export class Player {
     return false;
   }
 
+  // Check if player is currently in water
+  isInWater() {
+    const px = Math.floor(this.position.x);
+    const py = Math.floor(this.position.y + 0.15); // check lower torso
+    const pz = Math.floor(this.position.z);
+    return this.world.getVoxel(px, py, pz) === BLOCK_TYPES.WATER;
+  }
+
   update(dt, avatarGroup) {
+    const inWater = this.isInWater();
     const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw).normalize();
     const right   = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw).normalize();
 
-    // Sprint checks (Ctrl key or double W)
-    if (this.keys.ControlLeft && this.keys.KeyW && !this.flyMode) {
-      this.isSprinting = true;
-    }
-    if (!this.keys.KeyW) {
-      this.isSprinting = false;
-    }
+    // Reset forces loop (F = ma)
+    this.forces.set(0, 0, 0);
 
-    // Sneaking slower speed & crouched camera
-    this.isSneaking = this.keys.ShiftLeft && !this.flyMode;
-
-    // Movement speed modulators: sneak 3, walk 8, sprint 14, fly 20
-    let speed = 8;
-    if (this.flyMode)          speed = 20;
-    else if (this.isSprinting) speed = 14;
-    else if (this.isSneaking)  speed = 3;
-
-    // Apply movement accelerations
-    this.acceleration.set(0, 0, 0);
-    if (this.keys.KeyW) this.acceleration.add(forward);
-    if (this.keys.KeyS) this.acceleration.sub(forward);
-    if (this.keys.KeyD) this.acceleration.add(right);
-    if (this.keys.KeyA) this.acceleration.sub(right);
-
-    this.acceleration.normalize().multiplyScalar(speed);
-
-    // Apply physics
+    // Apply keyboard force multipliers based on state
+    let inputForceMag = 35.0; // base force
     if (this.flyMode) {
-      this.velocity.x = this.acceleration.x;
-      this.velocity.z = this.acceleration.z;
+      inputForceMag = 65.0;
+    } else if (inWater) {
+      inputForceMag = 20.0; // Drag of water reduces force effectiveness
+    } else if (this.isSprinting) {
+      inputForceMag = 55.0;
+    } else if (this.isSneaking) {
+      inputForceMag = 15.0;
+    }
+
+    const inputDir = new THREE.Vector3();
+    if (this.keys.KeyW) inputDir.add(forward);
+    if (this.keys.KeyS) inputDir.sub(forward);
+    if (this.keys.KeyD) inputDir.add(right);
+    if (this.keys.KeyA) inputDir.sub(right);
+
+    if (inputDir.lengthSq() > 0) {
+      inputDir.normalize().multiplyScalar(inputForceMag);
+      this.forces.add(inputDir);
+    }
+
+    // Apply Environment Forces (Gravity, Friction, Viscosity, Drag)
+    if (this.flyMode) {
+      // 3D air viscosity
+      const dragCoeff = 4.0;
+      const dragForce = this.velocity.clone().multiplyScalar(-dragCoeff);
+      this.forces.add(dragForce);
+
+      // Flying vertical controls
       if (this.keys.Space) {
-        this.velocity.y = speed * 0.7;
+        this.forces.y += inputForceMag * 0.75;
       } else if (this.keys.ShiftLeft) {
-        this.velocity.y = -speed * 0.7;
-      } else {
-        this.velocity.y = 0;
+        this.forces.y -= inputForceMag * 0.75;
       }
     } else {
       // Gravity
-      this.velocity.y -= 23 * dt;
-      this.velocity.x = this.acceleration.x;
-      this.velocity.z = this.acceleration.z;
+      const gravityAcc = inWater ? -8.0 : -22.0; // less gravity in water
+      this.forces.y += gravityAcc * this.mass;
 
-      // Jump
-      if (this.keys.Space && this.isGrounded && !this.isSneaking) {
-        this.velocity.y = 7.8;
+      // Viscous Drag / Surface Friction
+      let frictionCoeff = 5.0; // Default ground traction friction
+      if (inWater) {
+        frictionCoeff = 8.0; // High liquid viscosity
+      } else if (!this.isGrounded) {
+        frictionCoeff = 0.8; // Air resistance is low
+      } else if (this.isSprinting) {
+        frictionCoeff = 3.5; // lower friction when sprinting to conserve forward slide
+      }
+
+      // Apply horizontal friction force
+      const horizVelocity = new THREE.Vector3(this.velocity.x, 0, this.velocity.z);
+      const frictionForce = horizVelocity.multiplyScalar(-frictionCoeff);
+      this.forces.x += frictionForce.x;
+      this.forces.z += frictionForce.z;
+
+      // Jump impulse
+      if (this.keys.Space && (this.isGrounded || inWater) && !this.isSneaking) {
+        const jumpImpulse = inWater ? 4.5 : 7.6;
+        this.velocity.y = jumpImpulse;
         this.isGrounded = false;
-        this.isSprinting = false;
       }
     }
 
-    // Resolve Axis-Aligned AABB collisions
+    // Integrate forces: a = F/m, v = v + a*dt
+    const acc = this.forces.clone().multiplyScalar(1.0 / this.mass);
+    this.velocity.addScaledVector(acc, dt);
+
+    // Terminal velocity caps
+    let maxSpeed = 7.5;
+    if (this.flyMode)          maxSpeed = 18.0;
+    else if (this.isSprinting) maxSpeed = 12.5;
+    else if (this.isSneaking)  maxSpeed = 2.8;
+    else if (inWater)          maxSpeed = 3.8;
+
+    const horizSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
+    if (horizSpeed > maxSpeed) {
+      const scale = maxSpeed / horizSpeed;
+      this.velocity.x *= scale;
+      this.velocity.z *= scale;
+    }
+
+    // Kinematics Resolution: Axis-Separated Diagonal Sliding Collision Checks
     const nextPos = this.position.clone();
 
-    // 1. Resolve X collision
+    // 1. Resolve X axis movement (allows sliding along Z-walls)
     nextPos.x += this.velocity.x * dt;
     if (this.collidesAt(nextPos)) {
       nextPos.x = this.position.x;
-      this.velocity.x = 0;
+      this.velocity.x = 0; // stop X momentum, conserving Z
     } else {
       this.position.x = nextPos.x;
     }
 
-    // 2. Resolve Z collision
+    // 2. Resolve Z axis movement (allows sliding along X-walls)
     nextPos.z += this.velocity.z * dt;
     if (this.collidesAt(nextPos)) {
       nextPos.z = this.position.z;
-      this.velocity.z = 0;
+      this.velocity.z = 0; // stop Z momentum, conserving X
     } else {
       this.position.z = nextPos.z;
     }
 
-    // 3. Resolve Y collision
+    // 3. Resolve Y axis movement (gravity / jumping)
     nextPos.y += this.velocity.y * dt;
     if (this.collidesAt(nextPos)) {
       if (this.velocity.y < 0) {
@@ -230,28 +279,28 @@ export class Player {
       }
     }
 
-    // Void fallback coordinates
+    // Deep void reset
     if (this.position.y < -15) {
-      this.position.set(16, 12, 16);
+      this.position.set(16, 15, 16);
       this.velocity.set(0, 0, 0);
-      this.addNotification("Respawned! Fell into the deep void.");
+      this.addNotification("Respawned! Fell into the void.");
     }
 
-    // Sync Avatar positioning
+    // Sync avatar meshes
     if (avatarGroup) {
       avatarGroup.position.copy(this.position);
       avatarGroup.rotation.y = this.yaw;
       avatarGroup.visible = (this.cameraMode === 'third');
     }
 
-    // View FOV modifiers based on sprinting
-    const targetFov = this.isSprinting ? 87 : 75;
+    // Sprinting FOV
+    const targetFov = this.isSprinting && horizSpeed > 1 ? 87 : 75;
     if (this.camera.fov !== targetFov) {
       this.camera.fov += (targetFov - this.camera.fov) * 0.12;
       this.camera.updateProjectionMatrix();
     }
 
-    // Camera Collision loop check
+    // Camera Collision resolving with Interpolation follow path
     const headHeight = this.isSneaking ? 1.05 : 1.45;
     const playerHead = this.position.clone().add(new THREE.Vector3(0, headHeight, 0));
 
@@ -264,7 +313,7 @@ export class Player {
 
       this.camera.lookAt(lookTarget);
     } else {
-      // Third Person orbit with block culling collision check
+      // Third Person orbit camera with block obstacle culling
       const cameraOffset = new THREE.Vector3(0, 0.4, 3.6)
         .applyAxisAngle(new THREE.Vector3(1, 0, 0), -this.pitch * 0.45)
         .applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
@@ -272,7 +321,6 @@ export class Player {
       const targetCameraPos = playerHead.clone().add(cameraOffset);
       let finalCameraPos = targetCameraPos.clone();
 
-      // Check points along vector from head to desired position
       const steps = 12;
       for (let i = 1; i <= steps; i++) {
         const t = i / steps;
@@ -280,14 +328,16 @@ export class Player {
         const voxel = this.world.getVoxel(Math.floor(checkPoint.x), Math.floor(checkPoint.y), Math.floor(checkPoint.z));
         
         if (voxel !== BLOCK_TYPES.AIR && voxel !== BLOCK_TYPES.WATER) {
-          // Collision! Set camera slightly back towards the head to prevent clipping
           const backStep = Math.max(0, i - 1.5) / steps;
           finalCameraPos = playerHead.clone().lerp(targetCameraPos, backStep);
           break;
         }
       }
 
-      this.camera.position.copy(finalCameraPos);
+      // Smoothly interpolate camera movement for fluid follow path
+      this.smoothedCameraPos.lerp(finalCameraPos, 0.18);
+      this.camera.position.copy(this.smoothedCameraPos);
+
       const lookTarget = this.position.clone().add(new THREE.Vector3(0, headHeight * 0.85, 0));
       this.camera.lookAt(lookTarget);
     }
