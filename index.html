@@ -12,6 +12,39 @@
 </head>
 <body>
 
+  <!-- ===== MULTIPLAYER NAME MODAL (shown before loading) ===== -->
+  <div id="mp-name-modal">
+    <div id="mp-name-box" class="glass-panel animate-zoom">
+      <div class="mp-logo">
+        <div class="logo-word logo-vox" style="font-size:2.2rem">VOX</div>
+        <div class="logo-word logo-verse" style="font-size:2.2rem">VERSE</div>
+      </div>
+      <div class="mp-tagline">Enter the Voxel Matrix</div>
+
+      <div class="mp-field-group">
+        <label for="mp-name-input">Your Display Name</label>
+        <input type="text" id="mp-name-input" maxlength="24"
+               placeholder="Player"
+               autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="mp-field-group">
+        <label>Avatar Color</label>
+        <div class="mp-color-row">
+          <label>Skin</label>
+          <input type="color" id="mp-skin-color" value="#ffdbac" />
+          <label>Shirt</label>
+          <input type="color" id="mp-shirt-color" value="#6366f1" />
+          <label>Pants</label>
+          <input type="color" id="mp-pants-color" value="#1c1c1c" />
+        </div>
+      </div>
+
+      <button id="mp-join-btn" class="btn-primary mp-join-btn">🚀 Enter World</button>
+      <div class="mp-hint">Multiplayer via <code>ws://localhost:8765</code> (start <code>python server.py</code>)</div>
+    </div>
+  </div>
+
   <!-- ===== MINECRAFT-STYLE WORLD LOADING SCREEN ===== -->
   <div id="loading-screen">
     <canvas id="loading-bg-canvas"></canvas>
@@ -99,7 +132,7 @@
       <div id="discord-details">
         <div class="server-title">
           <h3>Voxverse Matrix</h3>
-          <span class="online-indicator">🟢 4 nodes online</span>
+          <span class="online-indicator" id="discord-online-indicator">🟢 1 node online</span>
         </div>
 
         <div class="channels-section">
@@ -167,6 +200,11 @@
           <span id="current-channel-header" style="font-weight: 600;">general</span>
         </div>
         <div class="header-controls">
+          <!-- Multiplayer status indicators -->
+          <div id="mp-status-indicator">
+            <span id="mp-status-dot" title="Multiplayer: Connecting..."></span>
+            <span id="mp-online-count">👥 1 online</span>
+          </div>
           <button id="btn-save-world" class="btn-primary" style="background:#0ea5e9; margin-right: 8px;">💾 Save Node</button>
           <button id="btn-load-world" class="btn-primary" style="background:#8b5cf6; margin-right: 8px;">📂 Load Node</button>
           <button id="btn-toggle-weather" class="btn-primary" style="background: var(--discord-green); margin-right: 8px;">🌧️ Climate</button>
@@ -298,5 +336,40 @@
   </div>
 
   <script type="module" src="/src/main.js"></script>
+
+  <!-- Player Name Modal Logic (runs before game) -->
+  <script>
+    (function() {
+      const modal   = document.getElementById('mp-name-modal');
+      const input   = document.getElementById('mp-name-input');
+      const joinBtn = document.getElementById('mp-join-btn');
+
+      function doJoin() {
+        const name = (input.value.trim() || 'Player').slice(0, 24);
+        const avatarData = {
+          skinColor:  document.getElementById('mp-skin-color').value,
+          shirtColor: document.getElementById('mp-shirt-color').value,
+          pantsColor: document.getElementById('mp-pants-color').value,
+          hatType:    'none',
+          hasWings:   false,
+        };
+        // Animate modal out
+        modal.style.animation = 'mpModalOut 0.45s ease forwards';
+        setTimeout(() => {
+          modal.style.display = 'none';
+          // Dispatch join event — picked up by main.js multiplayer setup
+          window.dispatchEvent(new CustomEvent('voxverse-mp-join', {
+            detail: { name, avatar: avatarData }
+          }));
+        }, 450);
+      }
+
+      joinBtn.addEventListener('click', doJoin);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
+
+      // Auto-focus name input
+      setTimeout(() => input.focus(), 200);
+    })();
+  </script>
 </body>
 </html>

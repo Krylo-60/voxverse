@@ -11,6 +11,8 @@ import { MobSystem } from './mobs.js';
 import { QuestSystem } from './quests.js';
 import { runLoadingSequence } from './loader.js';
 import { playSFX, startAmbientMusic, getAudioContext } from './sfx.js';
+import { MultiplayerClient } from './multiplayer.js';
+import { RemoteAvatarManager } from './remote_avatar.js';
 
 // Setup Clock & Timers
 const clock = new THREE.Clock();
@@ -124,6 +126,53 @@ const player = new Player(world, camera, renderer.domElement);
 const avatar = new PlayerAvatar(scene);
 const discord = new DiscordIntegration(player, world, scene);
 const inventory = new Inventory();
+
+// ===== MULTIPLAYER SETUP =====
+const remoteAvatars = new RemoteAvatarManager(scene);
+
+const mp = new MultiplayerClient({
+  player,
+  world,
+  onBlockChange: (x, y, z, blockType) => {
+    // Remote block change → rebuild local mesh
+    rebuildWorldMesh();
+    if (x !== null) {
+      player.addNotification(`🧱 Remote block change at (${x},${y},${z})`);
+    }
+  },
+  onChatMessage: (msg) => {
+    discord.sendChatMessage(msg.name, msg.text, '🌐');
+  },
+  onPlayerJoined: (p) => {
+    remoteAvatars.addOrUpdate(p.id, p);
+    player.addNotification(`🟢 ${p.name} joined the server!`);
+  },
+  onPlayerLeft: (id, name) => {
+    remoteAvatars.remove(id);
+    player.addNotification(`🔴 ${name} left the server.`);
+  },
+  onConnected: () => {
+    player.addNotification('🌌 Connected to Voxverse multiplayer server!');
+  },
+  onDisconnected: () => {
+    player.addNotification('⚠️ Disconnected from multiplayer server.');
+    remoteAvatars.clear();
+  },
+});
+
+// Connect multiplayer once the player enters their name (set in index.html)
+window.addEventListener('voxverse-mp-join', (e) => {
+  const { name, avatar: avatarData } = e.detail;
+  mp.connect(name, avatarData);
+});
+
+// Hook discord chat input to also broadcast over multiplayer
+window.addEventListener('voxverse-chat-send', (e) => {
+  const { text, channel } = e.detail;
+  if (mp.isConnected()) {
+    mp.sendChat(text, channel);
+  }
+});
 
 // ===== POINTER LOCK OVERLAY & JOIN CASCADE =====
 const blocker = document.getElementById('blocker');
@@ -379,7 +428,9 @@ function respawnPlayer() {
   hunger = 100;
   stamina = 100;
   isDead = false;
-  player.position.set(16, 12, 16);
+
+  const spawnY = world.getHeight(16, 16) + 1.5;
+  player.position.set(16, spawnY, 16);
   player.velocity.set(0, 0, 0);
 
   // Reset HUD bars
@@ -855,6 +906,8 @@ window.addEventListener('mousedown', (e) => {
       addXP(1);
       spawnBlockBreakParticles(intersectBlock, bType);
       rebuildWorldMesh();
+      // Broadcast block break to multiplayer server
+      mp.sendBlockChange(intersectBlock.x, intersectBlock.y, intersectBlock.z, BLOCK_TYPES.AIR);
     }
   } 
   else if (e.button === 2 && emptyPlacePos) {
@@ -867,6 +920,8 @@ window.addEventListener('mousedown', (e) => {
     inventory.remove(selectedBlockType, 1);
     quests.track('blocksPlaced', 1);
     rebuildWorldMesh();
+    // Broadcast block place to multiplayer server
+    mp.sendBlockChange(emptyPlacePos.x, emptyPlacePos.y, emptyPlacePos.z, selectedBlockType);
   }
 });
 
@@ -1044,6 +1099,11 @@ worldWorker.onmessage = function(e) {
       // 2. Build local meshes
       rebuildWorldMesh();
 
+      // Dynamic surface spawn
+      const spawnY = world.getHeight(16, 16) + 1.5;
+      player.position.set(16, spawnY, 16);
+      player.velocity.set(0, 0, 0);
+
       // 3. Spawn first zombie
       mobs.spawnMob();
       
@@ -1114,6 +1174,14 @@ function animate() {
   if (avatar && player) {
     avatar.tick(performance.now() / 1000, player.getHorizontalSpeed(), !player.isGrounded && !player.flyMode);
   }
+
+  // 5c-mp. Interpolate remote player avatars
+  remoteAvatars.tick(dt);
+
+  // 5c-mp. Update remote player data from multiplayer client
+  mp.getRemotePlayers().forEach((p, id) => {
+    remoteAvatars.addOrUpdate(id, p);
+  });
 
   // 5c. Update active spatial chunks loading/unloading
   world.updateLoadedChunks(player.position, scene, blockMaterials);

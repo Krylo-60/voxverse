@@ -158,6 +158,11 @@ export class DiscordIntegration {
         chatInput.value = '';
         this.sendChatMessage('You', text, '💎');
 
+        // Dispatch for multiplayer relay
+        window.dispatchEvent(new CustomEvent('voxverse-chat-send', {
+          detail: { text, channel: this.currentChannel }
+        }));
+
         if (text.startsWith('/')) {
           this.executeConsoleCommand(text);
         } else {
