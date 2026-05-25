@@ -14,6 +14,7 @@ import json
 import uuid
 import time
 import logging
+import os
 from collections import defaultdict
 
 import websockets
@@ -31,8 +32,11 @@ log = logging.getLogger("voxverse")
 # ─────────────────────────────────────────────────────────────
 #  Global State
 # ─────────────────────────────────────────────────────────────
-HOST = "localhost"
-PORT = 8765
+# Render sets PORT env var; locally we default to 8765
+# Render requires binding to 0.0.0.0 (all interfaces)
+HOST = "0.0.0.0"
+PORT = int(os.environ.get("PORT", 8765))
+LOCAL_PORT = 8765  # for display purposes when running locally
 
 # players[player_id] = { ws, name, x, y, z, yaw, speed, avatar, joined_at }
 players: dict = {}
@@ -264,7 +268,9 @@ async def stats_loop():
 # ─────────────────────────────────────────────────────────────
 
 async def main():
-    log.info(f"🌌 Voxverse WebSocket Server  ws://{HOST}:{PORT}")
+    display_host = "localhost" if HOST == "0.0.0.0" else HOST
+    display_port = os.environ.get("PORT", LOCAL_PORT)
+    log.info(f"Voxverse WebSocket Server  ws://{display_host}:{display_port}")
     log.info("   Press Ctrl+C to stop.")
 
     async with websockets.serve(connection_handler, HOST, PORT):

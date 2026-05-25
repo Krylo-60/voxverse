@@ -2,16 +2,13 @@
 // Voxverse — Client-Side Multiplayer WebSocket Hub
 // src/multiplayer.js
 // ============================================================
-// Connects to server.py at ws://localhost:8765 and handles:
-//   • Sending local player state every 50 ms
-//   • Receiving remote player positions → remoteAvatars
-//   • Receiving block changes → world + mesh rebuild
-//   • Receiving chat messages → Discord chat panel
-//   • Join / leave notifications in HUD
+// WS URL: set VITE_WS_URL in .env.local for local dev,
+//         or in Vercel dashboard for production.
 // ============================================================
 
-const WS_URL          = 'ws://localhost:8765';
-const MOVE_INTERVAL   = 50;   // ms between position broadcasts
+// Reads from Vite env (VITE_WS_URL) or falls back to localhost
+const WS_URL        = import.meta.env.VITE_WS_URL || 'ws://localhost:8765';
+const MOVE_INTERVAL = 50;   // ms between position broadcasts
 
 export class MultiplayerClient {
   /**
