@@ -16,6 +16,7 @@ import time
 import logging
 import os
 from collections import defaultdict
+from typing import Optional
 
 import websockets
 
@@ -52,7 +53,7 @@ CHAT_HISTORY_MAX = 50
 #  Helpers
 # ─────────────────────────────────────────────────────────────
 
-async def broadcast(message: dict, exclude_id: str | None = None):
+async def broadcast(message: dict, exclude_id: Optional[str] = None):
     """Send a JSON message to all connected players (optionally skip one)."""
     payload = json.dumps(message)
     tasks = []
