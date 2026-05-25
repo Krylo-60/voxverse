@@ -287,6 +287,7 @@ self.onmessage = function(e) {
 
   else if (type === 'generateChunk') {
     const { cx, cy, cz } = payload;
+    console.log(`[Worker] Generating chunk ${cx},${cy},${cz}`);
     const chunkSize = 16;
     const voxels = new Uint8Array(chunkSize * chunkSize * chunkSize);
     
@@ -411,6 +412,7 @@ self.onmessage = function(e) {
       }
     }
 
+    console.log(`[Worker] Finished generating chunk ${cx},${cy},${cz}`);
     self.postMessage({ type: 'chunkGenerated', payload: { cx, cy, cz, voxels, biome } }, [voxels.buffer]);
   }
 };

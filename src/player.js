@@ -3,6 +3,7 @@
 // ============================================================
 import * as THREE from 'three';
 import { BLOCK_TYPES } from './world.js';
+import { playSFX } from './sfx.js';
 
 export class Player {
   constructor(world, camera, domElement) {
@@ -41,6 +42,7 @@ export class Player {
     this.isSprinting = false;
     this.isSneaking = false;
     this._lastWPress = 0;
+    this.stepTimer = 0;
 
     this.initInput();
   }
@@ -222,6 +224,7 @@ export class Player {
         const jumpImpulse = inWater ? 4.5 : 7.6;
         this.velocity.y = jumpImpulse;
         this.isGrounded = false;
+        playSFX('jump');
       }
     }
 
@@ -277,6 +280,18 @@ export class Player {
       if (!this.flyMode) {
         this.isGrounded = false;
       }
+    }
+
+    // Footstep audio trigger
+    if (this.isGrounded && horizSpeed > 1) {
+      this.stepTimer += dt;
+      const stepInterval = this.isSprinting ? 0.28 : 0.45;
+      if (this.stepTimer >= stepInterval) {
+        playSFX('step');
+        this.stepTimer = 0;
+      }
+    } else {
+      this.stepTimer = 0;
     }
 
     // Deep void reset

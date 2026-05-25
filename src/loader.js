@@ -164,11 +164,10 @@ export async function runLoadingSequence(onComplete) {
   }
 
   // Signal game to initialise (terrain gen, mesh build etc.)
-  onComplete._resolveReady = null;
-  const gameReadyPromise = new Promise(res => { onComplete._resolveReady = res; });
-
-  // Trigger game init
-  onComplete();
+  const gameReadyPromise = new Promise(res => {
+    // Trigger game init with resolve function
+    onComplete(res);
+  });
 
   // Continue advancing bar stages while game loads
   for (let i = 3; i < STAGES.length - 1; i++) {

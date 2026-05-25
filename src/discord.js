@@ -3,7 +3,7 @@
 // ============================================================
 import * as THREE from 'three';
 import { BLOCK_TYPES } from './world.js';
-import { playSFX, playSpatialVoiceChime, updateAudioListener } from './sfx.js';
+import { playSFX, playSpatialVoiceChime, updateAudioListener, getAudioContext } from './sfx.js';
 
 export class DiscordIntegration {
   constructor(player, world, scene) {
@@ -545,10 +545,4 @@ export class DiscordIntegration {
       }
     });
   }
-}
-
-// Global AudioContext wrapper helper
-function getAudioContext() {
-  const ctx = playSFX && playSFX('break') ? null : null; // stub
-  return playSFX.name ? window.__audioContext || (window.__audioContext = new (window.AudioContext || window.webkitAudioContext)()) : null;
 }

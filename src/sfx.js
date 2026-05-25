@@ -139,6 +139,52 @@ export function playSFX(type) {
     osc.start(now);
     osc.stop(now + 0.22);
   }
+
+  else if (type === 'jump') {
+    // Jump sound: rapid pitch slide upwards
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(140, now);
+    osc.frequency.exponentialRampToValueAtTime(320, now + 0.12);
+
+    gainNode.gain.setValueAtTime(0.06, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.13);
+  }
+
+  else if (type === 'step') {
+    // Footstep: very brief low-pass noise burst
+    const bufferSize = ctx.sampleRate * 0.04; // 40ms
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2.0 - 1.0;
+    }
+
+    const noiseSource = ctx.createBufferSource();
+    noiseSource.buffer = buffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(180, now);
+
+    const gainNode = ctx.createGain();
+    gainNode.gain.setValueAtTime(0.04, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+    noiseSource.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    noiseSource.start(now);
+  }
 }
 
 // Procedural spatial voice sound chimes for close-by bots
@@ -184,4 +230,54 @@ export function playSpatialVoiceChime(botPosition, type) {
 
   osc.start(now);
   osc.stop(now + 0.25);
+}
+
+let musicRunning = false;
+export function startAmbientMusic() {
+  if (musicRunning) return;
+  musicRunning = true;
+
+  const ctx = getAudioContext();
+
+  // Retro ambient chords progression: Cmaj7 -> Am7 -> Fmaj7 -> G7
+  const chords = [
+    [130.81, 196.00, 261.63, 329.63, 493.88], // Cmaj7 (C3, G3, C4, E4, B4)
+    [110.00, 165.00, 220.00, 261.63, 329.63], // Am7 (A2, E3, A3, C4, E4)
+    [87.31,  130.81, 174.61, 220.00, 261.63], // Fmaj7 (F2, C3, F3, A3, C4)
+    [98.00,  146.83, 196.00, 246.94, 293.66]  // G7 (G2, D3, G3, B3, D4)
+  ];
+
+  let currentChord = 0;
+
+  function playNextChord() {
+    if (!musicRunning) return;
+    const now = ctx.currentTime;
+    const chord = chords[currentChord];
+
+    chord.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now);
+
+      const volume = idx === 0 ? 0.03 : 0.015; // soft root note
+      gainNode.gain.setValueAtTime(0, now);
+      gainNode.gain.linearRampToValueAtTime(volume, now + 2.0); // 2s slow attack fade-in
+      gainNode.gain.setValueAtTime(volume, now + 5.5);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 8.5); // slow release fade-out
+
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 9.0);
+    });
+
+    currentChord = (currentChord + 1) % chords.length;
+    setTimeout(playNextChord, 9000);
+  }
+
+  // Delay starting to avoid early block pop-up warning
+  setTimeout(playNextChord, 4000);
 }

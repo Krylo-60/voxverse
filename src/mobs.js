@@ -62,11 +62,11 @@ export class MobSystem {
     const pz = Math.floor(this.player.position.z);
     const angle  = Math.random() * Math.PI * 2;
     const dist   = 12 + Math.random() * 8;
-    const spawnX = Math.max(1, Math.min(this.world.width  - 2, px + Math.round(Math.cos(angle) * dist)));
-    const spawnZ = Math.max(1, Math.min(this.world.depth  - 2, pz + Math.round(Math.sin(angle) * dist)));
+    const spawnX = px + Math.round(Math.cos(angle) * dist);
+    const spawnZ = pz + Math.round(Math.sin(angle) * dist);
     const spawnY = this.world.getHeight(spawnX, spawnZ) + 1;
 
-    // Don't spawn in water or outside world
+    // Don't spawn in water
     if (this.world.getBlock(spawnX, Math.max(0, spawnY - 1), spawnZ) === BLOCK_TYPES.WATER) return;
 
     const mesh = this._makeMobMesh(typeKey, def);
@@ -256,9 +256,7 @@ export class MobSystem {
       mob.mesh.position.x += moveX * dt;
       mob.mesh.position.z += moveZ * dt;
 
-      // Clamp to world bounds
-      mob.mesh.position.x = Math.max(0.5, Math.min(this.world.width  - 0.5, mob.mesh.position.x));
-      mob.mesh.position.z = Math.max(0.5, Math.min(this.world.depth  - 0.5, mob.mesh.position.z));
+      // No clamp needed for infinite world scaling
 
       // Snap Y to ground
       const gx = Math.floor(mob.mesh.position.x);

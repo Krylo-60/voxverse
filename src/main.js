@@ -10,7 +10,7 @@ import { Inventory } from './inventory.js';
 import { MobSystem } from './mobs.js';
 import { QuestSystem } from './quests.js';
 import { runLoadingSequence } from './loader.js';
-import { playSFX } from './sfx.js';
+import { playSFX, startAmbientMusic, getAudioContext } from './sfx.js';
 
 // Setup Clock & Timers
 const clock = new THREE.Clock();
@@ -103,6 +103,7 @@ window.addEventListener('click', (e) => {
   if (isBlockerOrChild && isWithinWindow) {
     canvas.focus();
     canvas.requestPointerLock();
+    getAudioContext(); // Resume Web Audio API
   }
 });
 
@@ -424,24 +425,30 @@ function updateCrystalLights() {
   glowLights.forEach(light => scene.remove(light));
   glowLights.length = 0;
 
-  for (let x = 0; x < world.width; x++) {
-    for (let y = 0; y < world.height; y++) {
-      for (let z = 0; z < world.depth; z++) {
-        const block = world.getBlock(x, y, z);
-        if (block === BLOCK_TYPES.CRYSTAL) {
-          const light = new THREE.PointLight('#d946ef', 1.8, 8);
-          light.position.set(x + 0.5, y + 0.5, z + 0.5);
-          scene.add(light);
-          glowLights.push(light);
-        } else if (block === BLOCK_TYPES.TORCH) {
-          const light = new THREE.PointLight('#f97316', 1.6, 6);
-          light.position.set(x + 0.5, y + 0.5, z + 0.5);
-          scene.add(light);
-          glowLights.push(light);
+  world.chunks.forEach((chunk, key) => {
+    const [cx, cy, cz] = key.split(',').map(Number);
+    const sz = world.chunkSize;
+
+    for (let x = 0; x < sz; x++) {
+      for (let y = 0; y < sz; y++) {
+        for (let z = 0; z < sz; z++) {
+          const idx = x + y * sz + z * sz * sz;
+          const block = chunk[idx];
+          if (block === BLOCK_TYPES.CRYSTAL) {
+            const light = new THREE.PointLight('#d946ef', 1.8, 8);
+            light.position.set(cx * sz + x + 0.5, cy * sz + y + 0.5, cz * sz + z + 0.5);
+            scene.add(light);
+            glowLights.push(light);
+          } else if (block === BLOCK_TYPES.TORCH) {
+            const light = new THREE.PointLight('#f97316', 1.6, 6);
+            light.position.set(cx * sz + x + 0.5, cy * sz + y + 0.5, cz * sz + z + 0.5);
+            scene.add(light);
+            glowLights.push(light);
+          }
         }
       }
     }
-  }
+  });
 }
 
 // ===== WEB AUDIO API SYNTHESIZER ENGINE =====
@@ -638,6 +645,64 @@ function toggleHelpPanel() {
   helpEl.style.display = helpEl.style.display === 'none' ? 'flex' : 'none';
 }
 
+// ===== BLOCK BREAKING PARTICLE SYSTEM =====
+const particleGeometry = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+const particleMaterialsCache = {};
+const activeParticles = [];
+const BLOCK_COLORS = {
+  [BLOCK_TYPES.GRASS]: '#16a34a',
+  [BLOCK_TYPES.DIRT]: '#78350f',
+  [BLOCK_TYPES.STONE]: '#64748b',
+  [BLOCK_TYPES.WOOD]: '#451a03',
+  [BLOCK_TYPES.LEAVES]: '#15803d',
+  [BLOCK_TYPES.WATER]: '#3b82f6',
+  [BLOCK_TYPES.SAND]: '#facc15',
+  [BLOCK_TYPES.CRYSTAL]: '#d946ef',
+  [BLOCK_TYPES.TORCH]: '#f97316',
+  [BLOCK_TYPES.COAL]: '#1e293b',
+  [BLOCK_TYPES.IRON]: '#94a3b8'
+};
+
+function getParticleMaterial(color) {
+  if (!particleMaterialsCache[color]) {
+    particleMaterialsCache[color] = new THREE.MeshStandardMaterial({
+      color: color,
+      roughness: 0.8,
+      metalness: 0.1
+    });
+  }
+  return particleMaterialsCache[color];
+}
+
+function spawnBlockBreakParticles(pos, blockType) {
+  const color = BLOCK_COLORS[blockType] || '#ffffff';
+  const count = 12 + Math.floor(Math.random() * 8);
+  const mat = getParticleMaterial(color);
+
+  for (let i = 0; i < count; i++) {
+    const mesh = new THREE.Mesh(particleGeometry, mat);
+    mesh.position.set(
+      pos.x + 0.5 + (Math.random() - 0.5) * 0.6,
+      pos.y + 0.5 + (Math.random() - 0.5) * 0.6,
+      pos.z + 0.5 + (Math.random() - 0.5) * 0.6
+    );
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+
+    activeParticles.push({
+      mesh: mesh,
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 3,
+        Math.random() * 4 + 1.5,
+        (Math.random() - 0.5) * 3
+      ),
+      age: 0,
+      life: 0.6 + Math.random() * 0.6
+    });
+  }
+}
+
 // ===== SPECTACULAR CREEPER BLAST FX =====
 function triggerCreeperExplosion(pos, creeperId) {
   // Synthesize explosion blast sound
@@ -671,7 +736,13 @@ function triggerCreeperExplosion(pos, creeperId) {
         const dy = y - pos.y;
         const dz = z - pos.z;
         if (dx*dx + dy*dy + dz*dz <= rad*rad) {
-          world.setBlock(x, y, z, BLOCK_TYPES.AIR);
+          const bType = world.getBlock(x, y, z);
+          if (bType !== BLOCK_TYPES.AIR && bType !== BLOCK_TYPES.WATER) {
+            world.setBlock(x, y, z, BLOCK_TYPES.AIR);
+            if (Math.random() < 0.25) {
+              spawnBlockBreakParticles(new THREE.Vector3(x, y, z), bType);
+            }
+          }
         }
       }
     }
@@ -749,6 +820,7 @@ window.addEventListener('mousedown', (e) => {
       inventory.add(bType, 1);
       quests.track('blocksMined', 1);
       addXP(1);
+      spawnBlockBreakParticles(intersectBlock, bType);
       rebuildWorldMesh();
     }
   } 
@@ -924,7 +996,7 @@ worldWorker.onmessage = function(e) {
     updateDurabilityUI();
 
     // Trigger Minecraft loader UI countdown transitions
-    const initGame = async () => {
+    const initGame = async (resolveReady) => {
       // 1. Asynchronously generate chunk terrain map grids
       await world.preloadWorld();
 
@@ -935,15 +1007,16 @@ worldWorker.onmessage = function(e) {
       mobs.spawnMob();
       
       // 4. Resolve loader ready promise
-      if (initGame._resolveReady) {
-        initGame._resolveReady();
+      if (resolveReady) {
+        resolveReady();
       }
-
-      // 5. Start main tick
-      animate();
     };
 
-    runLoadingSequence(initGame);
+    runLoadingSequence(initGame).then(() => {
+      startAmbientMusic();
+      // 5. Start main tick only after loader screen is completely gone
+      animate();
+    });
   }
 };
 
@@ -967,6 +1040,31 @@ function animate() {
 
   // 4. Tick weather rain particle arrays
   updateRain(dt);
+
+  // 4b. Update block break particle physics
+  for (let i = activeParticles.length - 1; i >= 0; i--) {
+    const p = activeParticles[i];
+    p.age += dt;
+    if (p.age >= p.life) {
+      scene.remove(p.mesh);
+      activeParticles.splice(i, 1);
+    } else {
+      p.velocity.y -= 18 * dt; // gravity
+      p.mesh.position.addScaledVector(p.velocity, dt);
+
+      // Bounce check
+      const bx = Math.floor(p.mesh.position.x);
+      const by = Math.floor(p.mesh.position.y);
+      const bz = Math.floor(p.mesh.position.z);
+      const blockUnder = world.getVoxel(bx, by, bz);
+      if (blockUnder !== BLOCK_TYPES.AIR && blockUnder !== BLOCK_TYPES.WATER) {
+        p.velocity.y = -p.velocity.y * 0.35; // bounce
+        p.velocity.x *= 0.55;
+        p.velocity.z *= 0.55;
+        p.mesh.position.y = by + 1.01;
+      }
+    }
+  }
 
   // 5. Tick ECS Engine registry
   ecs.update(dt);
