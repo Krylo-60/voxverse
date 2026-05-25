@@ -94,8 +94,15 @@ const inventory = new Inventory();
 
 // ===== POINTER LOCK OVERLAY & JOIN CASCADE =====
 const blocker = document.getElementById('blocker');
-blocker.addEventListener('click', () => {
-  canvas.requestPointerLock();
+
+window.addEventListener('click', (e) => {
+  const isBlockerOrChild = e.target === blocker || (blocker && blocker.contains(e.target));
+  const isWithinWindow = e.clientX >= 0 && e.clientX <= window.innerWidth &&
+                         e.clientY >= 0 && e.clientY <= window.innerHeight;
+
+  if (isBlockerOrChild && isWithinWindow) {
+    canvas.requestPointerLock();
+  }
 });
 
 document.addEventListener('pointerlockchange', () => {
