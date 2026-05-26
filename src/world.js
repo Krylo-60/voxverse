@@ -170,8 +170,10 @@ export class VoxelWorld {
     const promises = [];
     for (const col of columns) {
       for (let cy = 0; cy < this.worldHeightChunks; cy++) {
+        const chunkY = cy;
         promises.push(
-          this.generateChunkAsync(col.cx, cy, col.cz).then(() => {
+          this.generateChunkAsync(col.cx, chunkY, col.cz).then(() => {
+            this.dirtyChunks.add(`${col.cx},${chunkY},${col.cz}`);
             loaded++;
             if (onProgress) onProgress(loaded / total);
           })
