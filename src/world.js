@@ -34,7 +34,7 @@ export class VoxelWorld {
     this.loadingChunks = new Set(); // Track chunks currently requesting from worker
 
     // Worker initialization with standard inline syntax
-    this.worker = new Worker(new URL('./world-worker.js', import.meta.url), { type: 'module' });
+    this.worker = new Worker(new URL('./world-worker.js', import.meta.url));
     this.pendingChunks = new Map(); // 'cx,cy,cz' -> callback
 
     // Web Worker message listener

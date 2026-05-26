@@ -100,7 +100,7 @@ scene.add(starfield);
 const glowLights = [];
 
 // ===== SPAWN WEB WORKER FOR PROCEDURAL NOISE =====
-const worldWorker = new Worker(new URL('./world-worker.js', import.meta.url), { type: 'module' });
+const worldWorker = new Worker(new URL('./world-worker.js', import.meta.url));
 
 // Materials mapping
 let blockMaterials = {};
