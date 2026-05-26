@@ -1032,42 +1032,8 @@ worldWorker.onmessage = function(e) {
       materials[key] = tex;
     }
 
-    // Assign composite grass textures
-    const grassSideCanvas = document.createElement('canvas');
-    grassSideCanvas.width = 64; grassSideCanvas.height = 64;
-    const gCtx = grassSideCanvas.getContext('2d');
-    
-    // Dirt base
-    const dirtCanvas = document.createElement('canvas');
-    dirtCanvas.width = 64; dirtCanvas.height = 64;
-    dirtCanvas.getContext('2d').putImageData(new ImageData(textures.dirt, 64, 64), 0, 0);
-    gCtx.drawImage(dirtCanvas, 0, 0);
-
-    // Green strip top
-    gCtx.fillStyle = '#16a34a';
-    gCtx.fillRect(0, 0, 64, 18);
-    for (let x = 0; x < 64; x++) {
-      if (Math.random() > 0.4) {
-        gCtx.fillStyle = '#15803d';
-        gCtx.fillRect(x, 18, 1, Math.floor(Math.random() * 5));
-      }
-    }
-    const grassSideTex = new THREE.CanvasTexture(grassSideCanvas);
-    grassSideTex.magFilter = THREE.NearestFilter;
-    grassSideTex.minFilter = THREE.NearestFilter;
-
-    // Map block materials dictionary
-    const grassMats = [
-      new THREE.MeshStandardMaterial({ map: grassSideTex, roughness: 0.9 }),
-      new THREE.MeshStandardMaterial({ map: grassSideTex, roughness: 0.9 }),
-      new THREE.MeshStandardMaterial({ map: materials.grassTop, roughness: 0.7 }),
-      new THREE.MeshStandardMaterial({ map: materials.dirt, roughness: 0.95 }),
-      new THREE.MeshStandardMaterial({ map: grassSideTex, roughness: 0.9 }),
-      new THREE.MeshStandardMaterial({ map: grassSideTex, roughness: 0.9 })
-    ];
-
     blockMaterials = {
-      [BLOCK_TYPES.GRASS]:   grassMats,
+      [BLOCK_TYPES.GRASS]:   new THREE.MeshStandardMaterial({ map: materials.grassTop, roughness: 0.7 }),
       [BLOCK_TYPES.DIRT]:    new THREE.MeshStandardMaterial({ map: materials.dirt, roughness: 0.95 }),
       [BLOCK_TYPES.STONE]:   new THREE.MeshStandardMaterial({ map: materials.stone, roughness: 0.8 }),
       [BLOCK_TYPES.WOOD]:    new THREE.MeshStandardMaterial({ map: materials.wood, roughness: 0.85 }),
